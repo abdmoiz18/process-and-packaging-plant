@@ -8,7 +8,8 @@ VAR_GLOBAL
 	Controller_Output : REAL := 50; // PID Output, 0-100%
 	Pump_Enable : BOOL; // Final Control Element
 	Mode_Auto : BOOL := TRUE; // TRUE = PID, FALSE = Manual
-	Manual_Ouput : REAL := 0.0; // Manual Output value
+	Prev_Mode_Auto : BOOL;
+	Manual_Output : REAL := 0.0; // Manual Output value
 	High_Alarm : BOOL;
 	Low_Alarm : BOOL;
 	High_Alarm_Trip : BOOL; // Trip for interlock
@@ -20,5 +21,20 @@ VAR_GLOBAL
 	
 	// For P-only Control
 	Error : REAL;
+    Prev_Error : REAL;
 	P_Term : REAL;
+	
+	// For Integral and Anti-Windup
+	I_Term : REAL;
+	Integral : REAL;
+	Output_Saturated : BOOL;
+	Tf : REAL := 0.5; // Ideally 5-10x ScanTime as a rule of thumb
+	
+	// For Derivative and 1st Order Low Pass Filter
+	D_Term : REAL;
+	D_Raw : REAL;
+	D_Filtered : REAL;
+	Alpha : REAL;
+	Prev_PV : REAL;
 END_VAR
+

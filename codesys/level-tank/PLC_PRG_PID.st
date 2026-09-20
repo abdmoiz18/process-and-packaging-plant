@@ -14,7 +14,7 @@ The PID reads PV and SP, computes error, and outputs MV.
 The process (mock tank or Factory I/O scene) receives MV and changes PV.
 
 Servo Test keeps disturbance (outflow) constant and step changes in SP (eg: 40 to 60%) to measure tracking response, especially rise time, overshoot, settling time
-Regulatory Test keeps SP constant and step changes SP (eg: 50 to 70%) to measure disturbance rejection
+Regulatory Test keeps SP constant and step changes disturbance (eg: 50 to 70%) to measure disturbance rejection
 
 Both tests are performed in the mock simulation before Factory I/O.
 The tuning log records results from both. 
@@ -23,41 +23,86 @@ After changing MV, the transient response is observed (changes in Servo and Regu
 rise time (time to reach 90% of final value), overshoot (peak value above SP in %), settling time (time to stay within 2% of SP), steady-state offset*)
 
 
-// Proportional-only Control 
 
-GVL_Level.Error := GVL_Level.Level_SP - GVL_Level.Level_PV;
-GVL_Level.P_Term := GVL_Level.Kp * GVL_Level.Error;
-GVL_Level.Controller_Output := GVL_Level.P_Term;
 
-// Clamp Output to 0-100% 
+// 1 - Proportional-only Control 
+
+GVL_Level.Error := GVL_Level.Level_SP - GVL_Level.Level_PV; // Error
+GVL_Level.P_Term := GVL_Level.Kp * GVL_Level.Error; // Proportional Term
+
+
+
+
+// 2 - Integral term with anti-windup (conditional integration)
+// Only integrate if output is not saturated in the direction of the error
+// Anti-windup prevents the integral from growing and causing overshoot after output saturates (eg, during startup or large steps)
+(* INTEGRAL: Rectangular/Euler/Left Riemann Sum Approximation
+     Continuous: I = ∫e(t)dt
+     Discrete:   Integral := Integral + (Error * dt)
+     Assumed constant error over each scan cycle. Good for small dt (100 ms). Error is O(dt).
+	 Trapezoidal Rule is more accurate but more expensive to implement and unnecessary for small dt *)
+
+GVL_Level.Output_Saturated := (GVL_Level.Controller_Output >= 100.0 AND GVL_Level.Error > 0.0) OR (GVL_Level.Controller_Output <= 0.0 AND GVL_Level.Error < 0.0);
+
+IF NOT GVL_Level.Output_Saturated THEN
+	GVL_Level.Integral := GVL_Level.Integral + (GVL_Level.Error * GVL_Level.ScanTime);
+END_IF
+
+GVL_Level.I_Term := GVL_Level.Ki * GVL_Level.Integral;
+
+
+
+
+// 3 - Derivative Term with 1st order Filter
+(* DERIVATIVE: Backward Difference Approximation
+  Continuous: D = de(t)/dt
+  Discrete:   D_term := Kd * (Level_PV - Previous_PV) / dt
+  Note that derivative is taken on (Level_PV - Prev_PV) over (Error - Prev_Error) to avoid "derivative kick" when SP changes abruptly.
+  Also note that derivatives amplify sensor noise which is why PI is preferred for Level Tanks and real PLCs apply a filter to D, not noticeable in Mock Tank but there in Factory I/O *)
+
+ GVL_Level.D_Raw := (GVL_Level.Kd*(GVL_Level.Level_PV - GVL_Level.Prev_PV)) / GVL_Level.ScanTime ; 
+ GVL_Level.Prev_PV := GVL_Level.Level_PV;
+ 
+  (* A 1st order Low Pass Filter is used on D, using the Backward Euler Approximation, the industry standard
+  Continuous: D(s) = Kd * s / (1 + Tf*s) * PV(s)
+  Discrete:   D_filtered[k] = alpha * D_filtered[k-1] + (1-alpha) * D_raw[k]
+  where:      alpha = Tf / (Tf + dt)
+  Backward Euler is stable for any dt and Tf, only has one multiply-add per scan, avoids phase lead, has sufficient accuracy
+  Forward Euler needs dt < 2Tf to be stable, Matched Pole-Zero uses exp(), hence both are rare in industry. Tustin (bilinear) is too complex and introduces phase lead near Nyquist frequency, but occassionally used in industry. *)
+  
+  GVL_Level.Alpha := GVL_Level.Tf / (GVL_Level.Tf + GVL_Level.ScanTime);
+  GVL_Level.D_Filtered := (GVL_Level.Alpha * GVL_Level.D_Filtered) + ((1.0 - GVL_Level.Alpha) * GVL_Level.D_Raw);
+  GVL_Level.D_Term := GVL_Level.D_Filtered;
+
+
+  
+  
+// 4 - Controller Output (MV)
+
+IF GVL_Level.Mode_Auto THEN
+	// Bumpless Transfer (manual to auto) - Initialize integral so that output matches manual value
+	IF NOT GVL_Level.Prev_Mode_Auto THEN
+		IF  GVL_Level.Ki <> 0.0 THEN
+			GVL_Level.Integral := (GVL_Level.Manual_Output - GVL_Level.P_Term - GVL_Level.D_Term)/(GVL_Level.Ki);
+		END_IF
+	END_IF
+	GVL_Level.Controller_Output := GVL_Level.P_Term + GVL_Level.I_Term + GVL_Level.D_Term;
+ELSE 
+	// Manual Mode : MV directly set by operator
+	GVL_Level.Controller_Output := GVL_Level.Manual_Output;
+END_IF
+
+GVL_Level.Prev_Mode_Auto := GVL_Level.Mode_Auto;
+
+
+
+
+// 5 - Clamp Output to 0-100% 
+// Physical limits of pump/valve
 
 IF GVL_Level.Controller_Output > 100.0 THEN
 	GVL_Level.Controller_Output := 100.0;
 ELSIF GVL_Level.Controller_Output < 0.0 THEN
 	GVL_Level.Controller_Output := 0.0;
 END_IF
-
-
-(* INTEGRAL: Rectangular/Euler/Left Riemann Sum Approximation
-     Continuous: I = ∫e(t)dt
-     Discrete:   Integral := Integral + (Error * dt)
-     Assumed constant error over each scan cycle. Good for small dt (100 ms). Error is O(dt).
-	 Trapezoidal Rule is more accurate but more expensive to implement and unnecessary for small dt
-
-DERIVATIVE: Backward Difference Approximation
-  Continuous: D = de(t)/dt
-  Discrete:   D_term := Kd * (Level_PV - Previous_PV) / dt
-  Note that derivative is taken on (Level_PV - Prev_PV) over (Error - Prev_Error) to avoid "derivative kick" when SP changes abruptly.
-  Also note that derivatives amplify sensor noise which is why PI is preferred for Level Tanks and real PLCs apply a filter to D, not noticeable in Mock Tank but there in Factory I/O
-
-  A 1st order Low Pass Filter is used on D, using the Backward Euler Approximation, the industry standard
-  Continuous: D(s) = Kd * s / (1 + Tf*s) * PV(s)
-  Discrete:   D_filtered[k] = alpha * D_filtered[k-1] + (1-alpha) * D_raw[k]
-  where:      alpha = Tf / (Tf + dt)
-  Backward Euler is stable for any dt and Tf, only has one multiply-add per scan, avoids phase lead, has sufficient accuracy
-  Forward Euler needs dt < 2Tf to be stable, Matched Pole-Zero uses exp(), hence both are rare in industry. Tustin (bilinear) is too complex and introduces phase lead near Nyquist frequency, but occassionally used in industry.
-  
-ANTI-WINDUP:
-  Conditional integration: freeze integral when output is saturate and error would push it further into saturation.
-     This prevents integral windup during startup or large setpoint steps. *)
-	 
+ 
