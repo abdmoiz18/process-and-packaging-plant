@@ -36,5 +36,15 @@ VAR_GLOBAL
 	D_Filtered : REAL;
 	Alpha : REAL;
 	Prev_PV : REAL;
+	
+	// For Interlock LD
+	Manual_Run : BOOL;
+	ResetTrip : BOOL;
+	
+	// For random noise generation
+    RandSeed : DWORD := 12345;   // any non-zero initial value
+	Noise : REAL;
+	
+	// For Tank Simulation with Interlock
+	Effective_Output : REAL;
 END_VAR
-
