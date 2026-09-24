@@ -15,10 +15,24 @@ VAR_GLOBAL
 	Reject_Count : DINT; // Rejected boxes
 	ScanTime : REAL := 0.1; // Scan time (secs)
 	
+	// Simulation Control
+	Simulation_Mode : BOOL := TRUE; // TRUE := mock, FALSE := Factory I/O
+	Downstream_Fault : BOOL; // Downstream jam or fault
+	Sort_Actuator_Enable : BOOL;
+	
 	// Random Weight
 	RandSeed : DWORD := 12345;
 	Noise : REAL;
 	LCG_Multiplier : DWORD := 1664525;
 	LCG_Increment : DWORD := 1013904223;
 	LCG_Modulus : DWORD := 10000;
+	
+	// Sequence Internals
+	State : INT; // Of the state machine
+	Stabilize_Timer : TON; // Weight stabilization timer
+	Divert_Timer : TON; // Diverter actuation timer
+	Prev_Box : BOOL; // For posedge detecttion
+	Weight_Stable : BOOL; // TRUE when weight reading is valid
+	Classify_Result : INT; // 0=good, 1=underweight, 2=overweight
+	Count_Done : BOOL;
 END_VAR
