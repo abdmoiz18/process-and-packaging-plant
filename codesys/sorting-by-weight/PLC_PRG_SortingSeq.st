@@ -50,11 +50,13 @@ CASE GVL_Sort.State OF
 	// The box is a reject. Push it off with the diverter by setting Sort_Actuator := TRUE and run a 1 sec timer.
 	// The diverter must stay on long enough (for a fixed time) to physically push the box off the converter and increment reject_count. One scan is not enough
 	// The state ends when the timer is done
+		GVL_Sort.Divert_Timer(IN := GVL_Sort.Sort_Actuator_Enable, PT := T#1S);
+		// Change : Run the timer not unconditionally, but when actuator is enabled, aka no downstream fault or conveyor running issue, aka also box is present and no box jam alarm
+		
+	
 	IF GVL_Sort.Sort_Actuator_Enable THEN
 		GVL_Sort.Sort_Actuator := TRUE;
 	END_IF
-	
-	GVL_Sort.Divert_Timer(IN := TRUE, PT := T#1S);
 	
 	IF GVL_Sort.Divert_Timer.Q THEN
 		GVL_Sort.Sort_Actuator := FALSE;
@@ -83,3 +85,4 @@ END_CASE
 
 // Posedge detection for Box_Present (State 0)
 GVL_Sort.Prev_Box := GVL_Sort.Box_Present;
+

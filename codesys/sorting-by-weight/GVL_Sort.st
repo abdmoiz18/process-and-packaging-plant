@@ -35,4 +35,23 @@ VAR_GLOBAL
 	Weight_Stable : BOOL; // TRUE when weight reading is valid
 	Classify_Result : INT; // 0=good, 1=underweight, 2=overweight
 	Count_Done : BOOL;
+	
+	// Power Layer
+	Load : REAL;
+	Sim_Current : REAL;
+	Overcurrent_Alarm : BOOL;
+	Overcurrent_Threshold : REAL := 8.0;
+	Base_Current : REAL := 1.0;
+	Current_Scale_Factor : REAL := 0.07;
+	Noise_Amplitude : REAL := 0.4;
+	
+	// Alarm Internals
+	Box_Jam_Alarm : BOOL; // Box present for too long
+	Jam_Timer : TON;
+	
+	// I/O Scaling for Factory I/O (later)
+	Weight_Raw : INT;
+	Conveyor_Command_Raw : INT;
+	Diverter_Command_Raw : INT;
+	Raw_Max : REAL := 27648.0;
 END_VAR
